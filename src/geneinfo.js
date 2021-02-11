@@ -1,5 +1,5 @@
 var async = require('async');
-const Router = require('koa-router');
+const { Router } = require('./router.js');
 const router = new Router();
 
 let _db;

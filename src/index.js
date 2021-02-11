@@ -1,5 +1,8 @@
+const url = require('url');
+const http = require('http');
 const Koa = require('koa');
-const Router = require('koa-router');
+const koaRouter = require('koa-router');
+const { Router } = require('./router.js');
 const cors = require('@koa/cors');
 const logger = require('koa-logger');
 const bodyParser = require('koa-bodyparser');
@@ -35,46 +38,54 @@ if (args['--port']) {
 // Allows a frontend app to be hosted in the same process (but on a different
 // port). This is particularly useful if you want to run an entire app frontend
 // and backend in a single docker container.
-if (args['--app-dir']) {
-  const app = new Koa();
-  const appRouter = new Router();
-
-  appRouter.get('/*', async (ctx) => {
-    const fsPath = path.join(args['--app-dir'], ctx.path);
-    await serveStatic(ctx, fsPath);
-
-    // Bit of a hack. If previous attempt to serve didn't find the file,
-    // default to the root index.html.
-    if (ctx.status === 404) {
-      const fsPath = path.join(args['--app-dir'], 'index.html');
-      await serveStatic(ctx, fsPath);
-    }
-  });
-
-  let appPort = 8000;
-  if (args['--app-port']) {
-    appPort = Number(args['--app-port']);
-  }
-
-  app
-    .use(appRouter.routes())
-    .use(appRouter.allowedMethods())
-    .listen(appPort);
-}
+//if (args['--app-dir']) {
+//  const app = new Koa();
+//  const appRouter = new koaRouter();
+//
+//  appRouter.get('/*', async (ctx) => {
+//    const fsPath = path.join(args['--app-dir'], ctx.path);
+//    await serveStatic(ctx, fsPath);
+//
+//    // Bit of a hack. If previous attempt to serve didn't find the file,
+//    // default to the root index.html.
+//    if (ctx.status === 404) {
+//      const fsPath = path.join(args['--app-dir'], 'index.html');
+//      await serveStatic(ctx, fsPath);
+//    }
+//  });
+//
+//  let appPort = 8000;
+//  if (args['--app-port']) {
+//    appPort = Number(args['--app-port']);
+//  }
+//
+//  app
+//    .use(appRouter.routes())
+//    .use(appRouter.allowedMethods())
+//    .listen(appPort);
+//}
 
 const server = new Koa();
+//const router = new koaRouter();
 const router = new Router();
 
-router.use('/geneinfo', geneInfoRouter.routes(), geneInfoRouter.allowedMethods());
-router.use('/gene2pheno', gene2PhenoRouter.routes(), gene2PhenoRouter.allowedMethods());
-router.use('/genomebuild', genomeBuildRouter.routes(), genomeBuildRouter.allowedMethods());
-router.use('/hpo', hpoRouter.routes(), hpoRouter.allowedMethods());
+//router.use('/geneinfo', geneInfoRouter.routes(), geneInfoRouter.allowedMethods());
+router.use('/geneinfo', geneInfoRouter);
+//router.use('/gene2pheno', gene2PhenoRouter.routes(), gene2PhenoRouter.allowedMethods());
+//router.use('/genomebuild', genomeBuildRouter.routes(), genomeBuildRouter.allowedMethods());
+//router.use('/hpo', hpoRouter.routes(), hpoRouter.allowedMethods());
 
 router.get('/', async (ctx) => {
-  ctx.body = "<h1>I be healthful</h1>";
+  if (ctx.path === '/') {
+    ctx.body = "<h1>I be healthful</h1>";
+  }
+  else {
+    ctx.status = 404;
+    ctx.body = "No findy";
+  }
 });
 
-router.get('/static/*', async (ctx) => {
+router.get('/static/', async (ctx) => {
   const fsPath = dataPath(ctx.path);
   await serveStatic(ctx, fsPath);
 });
@@ -507,17 +518,50 @@ function genRegionsStr(regions) {
   return regionStr;
 }
 
-server
-  .use(logger())
-  .use(cors({
-    origin: '*',
-    maxAge: 86400,
-  }))
-  .use(bodyParser({
-    enableTypes: ['json', 'text'],
-    jsonLimit: '10mb',
-    textLimit: '10mb',
-  }))
-  .use(router.routes())
-  .use(router.allowedMethods())
-  .listen(port);
+//server
+//  .use(logger())
+//  .use(cors({
+//    origin: '*',
+//    maxAge: 86400,
+//  }))
+//  .use(bodyParser({
+//    enableTypes: ['json', 'text'],
+//    jsonLimit: '10mb',
+//    textLimit: '10mb',
+//  }))
+//  .use(router.routes())
+//  .use(router.allowedMethods())
+//  .listen(port);
+
+
+http.createServer(async (req, res) => {
+  const u = url.parse(req.url); 
+
+  const reqPath = u.pathname;
+
+  console.log(reqPath);
+
+  if (args['--app-dir']) {
+    if (reqPath.startsWith('/gru')) {
+      await router.handleRaw(req, res, '/gru');
+    }
+    else {
+      const ctx = await router.makeCtx(req, res, '');
+
+      const fsPath = path.join(args['--app-dir'], ctx.path);
+      await serveStatic(ctx, fsPath);
+
+      // Bit of a hack. If previous attempt to serve didn't find the file,
+      // default to the root index.html.
+      if (ctx.status === 404) {
+        const fsPath = path.join(args['--app-dir'], 'index.html');
+        await serveStatic(ctx, fsPath);
+      }
+
+      router.closeCtx(ctx);
+    }
+  }
+  else {
+    await router.handleRaw(req, res, '');
+  }
+}).listen(9002);
